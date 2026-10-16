@@ -55,7 +55,9 @@ jobs:
           assert not data['run_failed'], data['summary']
           assert data['facts']['TestCount'] == 297, data['facts']['TestCount']
           assert all(test['Status'] == 'pass' for test in data['facts']['Tests'])
-          assert data['tracer'] == 'ddtrace@' + os.environ['DD_TRACER_VERSION_PYTHON'], data['tracer']
+          versions = {json.loads(path.read_text())['body']['metadata']['*']['library_version']
+                      for path in reports[0].parent.glob('intake/*citestcycle.json')}
+          assert versions == {os.environ['DD_TRACER_VERSION_PYTHON']}, versions
           print('Verified 297 passing tests with', data['tracer'])
           PY
       - name: Save the local test report
