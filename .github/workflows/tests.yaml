@@ -29,6 +29,18 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python }}
+      - name: Prepare the test environment
+        shell: bash
+        run: |
+          uv sync --locked --python "${{ matrix.python }}"
+          uv run --no-sync python -c 'import pathlib, sys; print(pathlib.Path(sys.executable).parent)' >> "$GITHUB_PATH"
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@v3
+        with:
+          languages: python
+          python-tracer-version: '' # Latest release
+          api_key: ${{ secrets.DD_API_KEY }}
+          site: datadoghq.eu
       - run: uv run --locked tox run -e ${{ matrix.tox || format('py{0}', matrix.python) }}
   typing:
     runs-on: ubuntu-latest

@@ -145,6 +145,7 @@ env_list = [
 ]
 
 [tool.tox.env_run_base]
+pass_env = ["DD_*", "PYTHONPATH", "PYTEST_ADDOPTS"]
 description = "pytest on latest dependency versions"
 runner = "uv-venv-lock-runner"
 package = "wheel"

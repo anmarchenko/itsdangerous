@@ -1,0 +1,68 @@
+name: DDTest onboarding QA (credential-free)
+on:
+  workflow_dispatch:
+  push:
+    branches: [anmarchenko/ddtest-pr146-onboard-qa]
+permissions:
+  contents: read
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - name: Prepare the test environment
+        run: |
+          uv sync --locked --python 3.13
+          uv run --no-sync python -c 'import pathlib, sys; print(pathlib.Path(sys.executable).parent)' >> "$GITHUB_PATH"
+      - name: Build the exact DDTest PR revision
+        run: |
+          git init "$RUNNER_TEMP/ddtest-source"
+          git -C "$RUNNER_TEMP/ddtest-source" remote add origin https://github.com/DataDog/ddtest.git
+          git -C "$RUNNER_TEMP/ddtest-source" fetch --depth=1 origin 0791d9055f88f4862fe7c3840b43764d9f72f6b4
+          git -C "$RUNNER_TEMP/ddtest-source" checkout --detach FETCH_HEAD
+          cd "$RUNNER_TEMP/ddtest-source"
+          go build -o "$RUNNER_TEMP/ddtest-qa" .
+      - name: Record onboarding guidance
+        run: '"$RUNNER_TEMP/ddtest-qa" onboard --framework pytest'
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@v3
+        with:
+          languages: python
+          python-tracer-version: '' # Latest release
+          api_key: '' # Credential-free QA: testdrive sends to its local intake.
+          site: datadoghq.eu
+      - name: Verify instrumentation with the local testdrive intake
+        env:
+          DD_TRACE_DEBUG: '1'
+        run: '"$RUNNER_TEMP/ddtest-qa" testdrive --framework pytest --yes'
+      - name: Verify received tests and installed library
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          reports = list(pathlib.Path('.testoptimization/testdrive').glob('*/findings.json'))
+          assert len(reports) == 1, reports
+          data = json.loads(reports[0].read_text())
+          assert not data['run_failed'], data['summary']
+          assert data['facts']['TestCount'] == 297, data['facts']['TestCount']
+          assert all(test['Status'] == 'pass' for test in data['facts']['Tests'])
+          assert data['tracer'] == 'ddtrace@' + os.environ['DD_TRACER_VERSION_PYTHON'], data['tracer']
+          print('Verified 297 passing tests with', data['tracer'])
+          PY
+      - name: Save the local test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ddtest-pr146-itsdangerous-report
+          path: .testoptimization/testdrive/
+          include-hidden-files: true
+          if-no-files-found: error
